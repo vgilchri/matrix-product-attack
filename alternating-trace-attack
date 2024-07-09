@@ -1,0 +1,161 @@
+clear; 
+
+// parameters for alternating-------------------------------
+
+//k := 16; p := 2^(70)+25; n := 4; // toy example
+//k := 24; p := 1180591620717411303449; n := 4; 
+//k := 32; p := 20000000000000000000000000000047; n := 5; 
+//k := 40; p := 2449619279948477417637925925025071021162531; n := 6; 
+//k := 48; p := 1053291452546545112653655703164648880199901921673307; n := 6; 
+k := 56; p := 452896045148266986479329939846808292752854647314708573454667; n := 6; 
+//k := 64; p := 2^(255) -19; n := 8;  // challenge
+//k := 128; p := 2^(553) + 549; n := 10;  // recommended
+//k := 512; p := 2^(2859)+641; n:= 24;  // large
+
+Fp := FiniteField(p);
+
+Identity := function(Fp,n) // make identity matrix
+	M := ZeroMatrix(Fp,n);
+	for i in [1..n] do 
+		M[i][i] := Fp!1;
+	end for;
+	return M;
+end function;
+
+KeyGenAlt := function()
+	// generate dwarf set for private key
+	dwarves0 := [];
+	while #dwarves0 lt k do 
+		entries := [Fp!Random([0,1,2]) : i in [1..n^2]]; // sample random entries until invertible
+		D := Matrix(n,n,entries);
+		if Determinant(D) eq 1 and not (D in dwarves0) then 
+			dwarves0 cat:= [D];
+		end if;
+	end while;
+	dwarves1 := [];
+	while #dwarves1 lt k do 
+		entries := [Fp!Random([0,1,2]) : i in [1..n^2]]; // sample random entries until invertible
+		D := Matrix(n,n,entries);
+		if Determinant(D) eq 1 and not (D in dwarves1) then 
+			dwarves1 cat:= [D];
+		end if;
+	end while;
+
+	// select masking elves
+	masks := [];
+	while #masks lt (k+1) do 
+		// entries := [Random(Fp) : i in [1..n^2]]; // sample random entries until invertible
+		// E := Matrix(n,n,entries);
+		E := Random(SL(n,Fp));
+		if Determinant(E) eq 1 and not (E in masks) then 
+			masks cat:= [E];
+		end if;
+	end while;
+
+	// compute public key
+	elves0 := [];
+	for i in [1..k] do 
+		T := masks[i] * dwarves0[i] * masks[i+1]^(-1);
+		elves0 cat:= [T];
+	end for;
+	elves1 := [];
+	for i in [1..k] do 
+		T := masks[i] * dwarves1[i] * masks[i+1]^(-1);
+		elves1 cat:= [T];
+	end for;
+
+	// choose binary string to encrypt
+	m := [Random([0,1]) : i in [1..k]];
+
+	// compute ciphertext
+	C := Identity(Fp,n);
+	for j in [1..#m] do 
+		if m[j] eq 0 then 
+			C *:= elves0[j];
+		else
+			C *:= elves1[j];
+		end if;
+	end for;
+	return dwarves0, dwarves1, masks, elves0, elves1, m, C;
+end function;
+
+AllBitStrings := function(k) // all binary strings of length k
+	results := [[0],[1]];
+	for i in [1..k-1] do 
+		new := [];
+		for j in [1..#results] do 
+			new cat:= [results[j] cat [0]];
+			new cat:= [results[j] cat [1]];
+		end for;
+		results := new;
+	end for;
+	return results;
+end function;
+
+ComputeProd := function(L,elves0,elves1)
+// computes the product corresponding to the bits in L with the remaining ones equal to 0
+M := Identity(Fp,n);
+for i in [1..k] do 
+	if i lt #L + 1 then 
+		if L[i] eq 0 then
+			M *:= elves0[i];
+		else 
+			M *:= elves1[i];
+		end if;
+	else
+		M *:= elves0[i];
+	end if;
+end for;
+	return M;
+end function;
+
+TraceAttackAlternating := function(C,elves0,elves1,step,m) // step = number of bits to guess per step
+	traces := [p-101];
+	to_check := AllBitStrings(step); // bit strings of size step
+	inds := [[]]; // track the index ordering that defines the good products i.e. prod=A1 A2 -> index = [1,2]
+	extra := 0;
+	iterations := Floor(k/step);
+	for n in [1..iterations] do // number of steps
+		keep_inds := [];
+		keep_traces := [];
+		for i in [1..#inds] do // for each trace-decreasing guess so far
+			b_traces := [];
+			b_inds := [];
+			for b in to_check do // check all possible bit combos
+				//prev_trace := traces[i];
+				guess := inds[i] cat b;
+				mat := ComputeProd(guess,elves0,elves1);
+				A := mat^-1 * C;
+				trA := Minimum({Trace(A),-1*Trace(A)}); // take abs. value
+				// if guess eq m[1..#guess] then 
+				// 	bits cat:= [Log(2,Integers()!trA)]; // !!!!!!!!!!!!!!!!!!!!
+				// end if;
+				if trA lt traces[i]+100 then 
+					b_traces cat:= [trA];
+					b_inds cat:= [guess];
+				end if;
+			end for;
+			if #b_traces gt 0 then 
+				min_trace := Minimum(b_traces);
+				bound := Minimum({(min_trace+1)*100});
+			end if;
+			for s in [1..#b_traces] do // only keep the guesses with smallest trace
+				if b_traces[s] lt bound then 
+					keep_inds cat:= [b_inds[s]];
+					keep_traces cat:= [min_trace+50]; // track the "previous trace" for later comparison
+				end if;
+			end for;
+			//traces := keep_traces;
+		end for;
+		inds := keep_inds;
+		traces := keep_traces;
+		//#traces;
+	end for;
+	for b in inds do 
+		A := ComputeProd(b,elves0,elves1);
+		if A eq C then 
+			return b;
+		end if;
+	end for;
+	return [0];
+end function;
