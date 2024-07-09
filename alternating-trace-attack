@@ -122,14 +122,10 @@ TraceAttackAlternating := function(C,elves0,elves1,step,m) // step = number of b
 			b_traces := [];
 			b_inds := [];
 			for b in to_check do // check all possible bit combos
-				//prev_trace := traces[i];
 				guess := inds[i] cat b;
 				mat := ComputeProd(guess,elves0,elves1);
 				A := mat^-1 * C;
 				trA := Minimum({Trace(A),-1*Trace(A)}); // take abs. value
-				// if guess eq m[1..#guess] then 
-				// 	bits cat:= [Log(2,Integers()!trA)]; // !!!!!!!!!!!!!!!!!!!!
-				// end if;
 				if trA lt traces[i]+100 then 
 					b_traces cat:= [trA];
 					b_inds cat:= [guess];
@@ -145,11 +141,9 @@ TraceAttackAlternating := function(C,elves0,elves1,step,m) // step = number of b
 					keep_traces cat:= [min_trace+50]; // track the "previous trace" for later comparison
 				end if;
 			end for;
-			//traces := keep_traces;
 		end for;
 		inds := keep_inds;
 		traces := keep_traces;
-		//#traces;
 	end for;
 	for b in inds do 
 		A := ComputeProd(b,elves0,elves1);
